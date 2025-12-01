@@ -5,18 +5,28 @@
 import json
 import os
 from typing import List
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 import arxiv
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 
 PAPER_DIR = "papers"
 
-# Initialize FastMCP server
-mcp = FastMCP("research")
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    # On startup: create Arxiv client (pool)
+    client = arxiv.Client()
+    try:
+        yield {"arxiv_client": client}
+    finally:
+        client.close()
 
+# Initialize FastMCP server
+mcp = FastMCP("research", lifespan=app_lifespan)
 
 @mcp.tool()
-def search_papers(topic: str, max_results: int = 5) -> List[str]:
+def search_papers(ctx: Context,topic: str, max_results: int = 5) -> List[str]:
     """
     Search for papers on arXiv based on a topic and store their information.
 
@@ -29,7 +39,8 @@ def search_papers(topic: str, max_results: int = 5) -> List[str]:
     """
 
     # Use arxiv to find the papers
-    client = arxiv.Client()
+    client = ctx.request_context.lifespan_context["arxiv_client"]
+    
 
     # Search for the most relevant articles matching the queried topic
     search = arxiv.Search(
